@@ -1,0 +1,6 @@
+@WorkOrderSystem_HostAddress = http://localhost:5195
+
+GET {{WorkOrderSystem_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

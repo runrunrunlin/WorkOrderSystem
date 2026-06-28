@@ -1,0 +1,46 @@
+## .NET / ASP.NET Core
+
+# Build output
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+# Publish output
+**/publish/
+**/PublishProfiles/
+
+# Entity Framework migrations snapshot (optional — remove if you want to commit migrations)
+# **/Migrations/
+
+# App secrets & local config
+appsettings.Development.json
+appsettings.Local.json
+secrets.json
+
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Rider / JetBrains
+.idea/
+
+# Rider / VS Code
+.vscode/
+*.code-workspace
