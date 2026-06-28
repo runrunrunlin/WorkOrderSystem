@@ -107,8 +107,3 @@ The application will start on **http://localhost:5000** (or the port shown in th
 | PUT | `/api/equipment/{id}` | Admin | Update equipment details |
 | DELETE | `/api/equipment/{id}` | Admin | Delete equipment (blocked if open orders exist) |
 
----
-
-## License
-
-This project is intended as a portfolio demonstration. Feel free to fork and adapt for your own use.
