@@ -78,17 +78,6 @@ dotnet run
 
 The application will start on **http://localhost:5000** (or the port shown in the terminal). The SQLite database (`workorders.db`) and seed data are created automatically on first run — no database setup is required.
 
----
-
-## Default Login Credentials
-
-| Role | Username | Password |
-|---|---|---|
-| Administrator | `admin` | `admin123` |
-| Technician | `tech1` | `tech123` |
-| Technician | `tech2` | `tech123` |
-
-> These credentials are for local development only. Change them before deploying to any shared or production environment.
 
 ---
 
