@@ -24,6 +24,7 @@
     <div class="d-flex align-items-center gap-3">
         <a href="/dashboard.html" class="text-white text-decoration-none fw-semibold"><i class="bi bi-list-task me-1"></i>Work Orders</a>
         <a href="/equipment.html" class="text-white-50 text-decoration-none"><i class="bi bi-cpu me-1"></i>Equipment</a>
+        <a href="/analytics.html" class="text-white-50 text-decoration-none"><i class="bi bi-bar-chart-line me-1"></i>Analytics</a>
         <div class="vr bg-white opacity-25 mx-1" style="height:20px"></div>
         <span class="text-white-50 small" id="navUser"></span>
         <button class="btn btn-sm btn-outline-light" onclick="API.logout()"><i class="bi bi-box-arrow-right me-1"></i>Sign Out</button>
@@ -335,7 +336,10 @@ async function cancelOrder(id) {
 }
 
 async function showDetail(id) {
-    const w = await API.get(`/api/workorder/${id}`);
+    const [w, photos] = await Promise.all([
+        API.get(`/api/workorder/${id}`),
+        API.get(`/api/photo/${id}`)
+    ]);
     if (!w) return;
     document.getElementById('detailBody').innerHTML = `
         <div class="row g-3">
@@ -364,8 +368,64 @@ async function showDetail(id) {
                     <div class="bg-success bg-opacity-10 rounded p-3 small">${escHtml(w.completionNotes)}</div>
                 </div>` : ''}
             </div>
+            <div class="col-12">
+                <hr class="my-1">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <span class="text-muted small fw-semibold"><i class="bi bi-images me-1"></i>Photos</span>
+                    <button class="btn btn-outline-secondary btn-xs" onclick="document.getElementById('photoInput').click()">
+                        <i class="bi bi-upload me-1"></i>Upload Photo
+                    </button>
+                </div>
+                <input type="file" id="photoInput" accept=".jpg,.jpeg,.png,.gif" class="d-none"
+                       onchange="uploadPhoto(${w.id}, this)">
+                <div id="photoGallery" class="d-flex flex-wrap gap-2">
+                    ${renderPhotoThumbs(photos || [])}
+                </div>
+                <div id="photoUploadMsg" class="small mt-1"></div>
+            </div>
         </div>`;
     new bootstrap.Modal('#detailModal').show();
+}
+
+function renderPhotoThumbs(photos) {
+    if (!photos.length)
+        return '<span class="text-muted small">No photos yet.</span>';
+    return photos.map(p => `
+        <a href="/uploads/${p.workOrderId}/${p.fileName}" target="_blank" title="Click to open full size">
+            <img src="/uploads/${p.workOrderId}/${p.fileName}" loading="lazy"
+                 style="width:88px;height:88px;object-fit:cover;border-radius:8px;
+                        border:1px solid #e5e7eb;transition:opacity .15s;"
+                 onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">
+        </a>`).join('');
+}
+
+async function uploadPhoto(workOrderId, input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const msg = document.getElementById('photoUploadMsg');
+    msg.innerHTML = '<span class="text-muted"><i class="bi bi-arrow-repeat me-1"></i>Uploading…</span>';
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const res = await fetch(`/api/photo/${workOrderId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${API.getToken()}` },
+        body: formData
+    });
+
+    input.value = '';
+
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        msg.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>${escHtml(err.message || 'Upload failed')}</span>`;
+        return;
+    }
+
+    msg.innerHTML = '';
+    const photos = await API.get(`/api/photo/${workOrderId}`);
+    document.getElementById('photoGallery').innerHTML = renderPhotoThumbs(photos || []);
 }
 
 // Add btn-xs style

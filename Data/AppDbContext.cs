@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<Equipment> Equipment => Set<Equipment>();
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
+    public DbSet<Photo> Photos => Set<Photo>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -23,6 +24,18 @@ public class AppDbContext : DbContext
             .HasOne(w => w.AssignedTo)
             .WithMany(u => u.AssignedOrders)
             .HasForeignKey(w => w.AssignedToId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Photo>()
+            .HasOne(p => p.WorkOrder)
+            .WithMany()
+            .HasForeignKey(p => p.WorkOrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Photo>()
+            .HasOne(p => p.UploadedBy)
+            .WithMany()
+            .HasForeignKey(p => p.UploadedById)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }
