@@ -72,4 +72,22 @@ public class PhotoController : ControllerBase
 
         return Ok(new { photo.Id, photo.WorkOrderId, photo.FileName, photo.UploadedAt, photo.UploadedById });
     }
+
+    [HttpDelete("delete/{photoId}")]
+    public async Task<IActionResult> Delete(int photoId)
+    {
+        var photo = await _db.Photos.FindAsync(photoId);
+        if (photo == null) return NotFound();
+
+        if (photo.UploadedById != CurrentUserId && !User.IsInRole("Admin"))
+            return Forbid();
+
+        var filePath = Path.Combine(_env.WebRootPath, "uploads", photo.WorkOrderId.ToString(), photo.FileName);
+        if (System.IO.File.Exists(filePath))
+            System.IO.File.Delete(filePath);
+
+        _db.Photos.Remove(photo);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
 }

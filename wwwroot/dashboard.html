@@ -390,13 +390,36 @@ async function showDetail(id) {
 function renderPhotoThumbs(photos) {
     if (!photos.length)
         return '<span class="text-muted small">No photos yet.</span>';
-    return photos.map(p => `
-        <a href="/uploads/${p.workOrderId}/${p.fileName}" target="_blank" title="Click to open full size">
-            <img src="/uploads/${p.workOrderId}/${p.fileName}" loading="lazy"
-                 style="width:88px;height:88px;object-fit:cover;border-radius:8px;
-                        border:1px solid #e5e7eb;transition:opacity .15s;"
-                 onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">
-        </a>`).join('');
+    return photos.map(p => {
+        const canDelete = p.uploadedById === user.id || API.isAdmin();
+        return `
+        <div style="position:relative;display:inline-block;">
+            <a href="/uploads/${p.workOrderId}/${p.fileName}" target="_blank" title="Click to open full size">
+                <img src="/uploads/${p.workOrderId}/${p.fileName}" loading="lazy"
+                     style="width:88px;height:88px;object-fit:cover;border-radius:8px;
+                            border:1px solid #e5e7eb;display:block;">
+            </a>
+            ${canDelete ? `
+            <button onclick="deletePhoto(${p.id}, ${p.workOrderId})"
+                    title="Delete photo"
+                    style="position:absolute;top:3px;right:3px;width:20px;height:20px;
+                           border-radius:50%;border:none;background:rgba(0,0,0,.55);
+                           color:#fff;font-size:13px;line-height:1;cursor:pointer;
+                           display:flex;align-items:center;justify-content:center;
+                           padding:0;opacity:.75;transition:opacity .15s;"
+                    onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='.75'">
+                &times;
+            </button>` : ''}
+        </div>`;
+    }).join('');
+}
+
+async function deletePhoto(photoId, workOrderId) {
+    if (!confirm('Delete this photo?')) return;
+    const ok = await API.del(`/api/photo/delete/${photoId}`);
+    if (!ok) { alert('Delete failed'); return; }
+    const photos = await API.get(`/api/photo/${workOrderId}`);
+    document.getElementById('photoGallery').innerHTML = renderPhotoThumbs(photos || []);
 }
 
 async function uploadPhoto(workOrderId, input) {

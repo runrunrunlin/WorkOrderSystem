@@ -52,7 +52,7 @@ const API = {
         const res = await API.fetch(url, { method: 'DELETE' });
         if (!res) return false;
         return res.ok;
-    }
+    },
 };
 
 // Status/priority display helpers
