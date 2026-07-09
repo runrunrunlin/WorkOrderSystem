@@ -11,6 +11,7 @@ public class AppDbContext : DbContext
     public DbSet<Equipment> Equipment => Set<Equipment>();
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
     public DbSet<Photo> Photos => Set<Photo>();
+    public DbSet<ChecklistItem> ChecklistItems => Set<ChecklistItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -36,6 +37,18 @@ public class AppDbContext : DbContext
             .HasOne(p => p.UploadedBy)
             .WithMany()
             .HasForeignKey(p => p.UploadedById)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ChecklistItem>()
+            .HasOne(c => c.WorkOrder)
+            .WithMany()
+            .HasForeignKey(c => c.WorkOrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ChecklistItem>()
+            .HasOne(c => c.CheckedBy)
+            .WithMany()
+            .HasForeignKey(c => c.CheckedById)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

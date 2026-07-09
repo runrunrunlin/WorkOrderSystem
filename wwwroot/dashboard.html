@@ -174,7 +174,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="detailBody"></div>
-            <div class="modal-footer border-0 pt-0">
+            <div class="modal-footer border-0 pt-0" id="detailFooter">
                 <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
@@ -193,6 +193,8 @@ document.getElementById('navUser').innerHTML =
 let technicians = [];
 let currentAssignId = null;
 let currentCompleteId = null;
+let currentDetailWorkOrderId = null;
+let currentDetailWorkOrderTitle = '';
 
 async function init() {
     await Promise.all([loadStats(), loadOrders()]);
@@ -336,11 +338,22 @@ async function cancelOrder(id) {
 }
 
 async function showDetail(id) {
-    const [w, photos] = await Promise.all([
+    const [w, photos, checklist] = await Promise.all([
         API.get(`/api/workorder/${id}`),
-        API.get(`/api/photo/${id}`)
+        API.get(`/api/photo/${id}`),
+        API.get(`/api/checklist/${id}`)
     ]);
     if (!w) return;
+
+    currentDetailWorkOrderId    = w.id;
+    currentDetailWorkOrderTitle = w.title;
+
+    const isInProgress = w.status === 'InProgress';
+    const canComplete  = isInProgress && (API.isAdmin() || w.assignedToId === user.id);
+    const items        = checklist || [];
+    const allChecked   = items.length > 0 && items.every(i => i.isChecked);
+    const remaining    = items.filter(i => !i.isChecked).length;
+
     document.getElementById('detailBody').innerHTML = `
         <div class="row g-3">
             <div class="col-12"><h6 class="fw-bold text-dark">${escHtml(w.title)}</h6></div>
@@ -368,6 +381,17 @@ async function showDetail(id) {
                     <div class="bg-success bg-opacity-10 rounded p-3 small">${escHtml(w.completionNotes)}</div>
                 </div>` : ''}
             </div>
+            ${isInProgress ? `
+            <div class="col-12">
+                <hr class="my-1">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <span class="text-muted small fw-semibold"><i class="bi bi-clipboard-check me-1"></i>Safety Checklist</span>
+                    ${allChecked
+                        ? '<span class="badge bg-success">All Complete</span>'
+                        : `<span class="badge bg-warning text-dark">${remaining} remaining</span>`}
+                </div>
+                <div id="checklistItems">${renderChecklist(items, w.id)}</div>
+            </div>` : ''}
             <div class="col-12">
                 <hr class="my-1">
                 <div class="d-flex align-items-center justify-content-between mb-2">
@@ -384,7 +408,54 @@ async function showDetail(id) {
                 <div id="photoUploadMsg" class="small mt-1"></div>
             </div>
         </div>`;
+
+    document.getElementById('detailFooter').innerHTML = `
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+        ${canComplete ? `
+        <button id="modalCompleteBtn" class="btn btn-success btn-sm"
+                onclick="openCompleteFromDetail()"
+                ${!allChecked ? 'disabled title="Complete all safety checklist items first"' : ''}>
+            <i class="bi bi-check2-all me-1"></i>Mark as Complete
+        </button>` : ''}`;
+
     new bootstrap.Modal('#detailModal').show();
+}
+
+function renderChecklist(items, workOrderId) {
+    if (!items.length)
+        return '<span class="text-muted small">No checklist items.</span>';
+    return items.map(item => `
+        <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" id="chk_${item.id}"
+                   ${item.isChecked ? 'checked' : ''}
+                   onchange="toggleChecklistItem(${item.id}, this.checked, ${workOrderId})">
+            <label class="form-check-label small ${item.isChecked ? 'text-decoration-line-through text-muted' : ''}"
+                   for="chk_${item.id}">
+                ${escHtml(item.itemText)}
+            </label>
+        </div>`).join('');
+}
+
+async function toggleChecklistItem(itemId, checked, workOrderId) {
+    const url = `/api/checklist/${itemId}/${checked ? 'check' : 'uncheck'}`;
+    const { ok } = await API.put(url);
+    if (!ok) {
+        document.getElementById(`chk_${itemId}`).checked = !checked;
+        return;
+    }
+    const items = await API.get(`/api/checklist/${workOrderId}`);
+    document.getElementById('checklistItems').innerHTML = renderChecklist(items || [], workOrderId);
+    const btn = document.getElementById('modalCompleteBtn');
+    if (btn) {
+        const allChecked = items && items.length > 0 && items.every(i => i.isChecked);
+        btn.disabled = !allChecked;
+        btn.title    = allChecked ? '' : 'Complete all safety checklist items first';
+    }
+}
+
+function openCompleteFromDetail() {
+    bootstrap.Modal.getInstance('#detailModal').hide();
+    openComplete(currentDetailWorkOrderId, currentDetailWorkOrderTitle);
 }
 
 function renderPhotoThumbs(photos) {

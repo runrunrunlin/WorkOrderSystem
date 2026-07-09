@@ -49,6 +49,21 @@ using (var scope = app.Services.CreateScope())
                 FOREIGN KEY ("UploadedById") REFERENCES "Users" ("Id") ON DELETE RESTRICT
         )
         """);
+
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS "ChecklistItems" (
+            "Id"            INTEGER NOT NULL CONSTRAINT "PK_ChecklistItems" PRIMARY KEY AUTOINCREMENT,
+            "WorkOrderId"   INTEGER NOT NULL,
+            "ItemText"      TEXT    NOT NULL,
+            "IsChecked"     INTEGER NOT NULL DEFAULT 0,
+            "CheckedAt"     TEXT,
+            "CheckedById"   INTEGER,
+            CONSTRAINT "FK_ChecklistItems_WorkOrders_WorkOrderId"
+                FOREIGN KEY ("WorkOrderId") REFERENCES "WorkOrders" ("Id") ON DELETE CASCADE,
+            CONSTRAINT "FK_ChecklistItems_Users_CheckedById"
+                FOREIGN KEY ("CheckedById") REFERENCES "Users" ("Id") ON DELETE RESTRICT
+        )
+        """);
 }
 
 app.UseDefaultFiles();

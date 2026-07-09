@@ -101,6 +101,25 @@ public class WorkOrderController : ControllerBase
         w.AssignedToId = dto.TechnicianId;
         w.Status = "InProgress";
         w.UpdatedAt = DateTime.UtcNow;
+
+        if (!await _db.ChecklistItems.AnyAsync(c => c.WorkOrderId == w.Id))
+        {
+            string[] defaults =
+            [
+                "Power isolation confirmed",
+                "Lockout/Tagout applied",
+                "Safety equipment worn (gloves, goggles)",
+                "Work area secured and marked",
+                "Required tools and parts ready",
+                "Maintenance manual reviewed"
+            ];
+            _db.ChecklistItems.AddRange(defaults.Select(text => new ChecklistItem
+            {
+                WorkOrderId = w.Id,
+                ItemText    = text
+            }));
+        }
+
         await _db.SaveChangesAsync();
         await _db.Entry(w).Reference(x => x.AssignedTo).LoadAsync();
         return Ok(ToDto(w));
