@@ -411,6 +411,10 @@ async function showDetail(id) {
 
     document.getElementById('detailFooter').innerHTML = `
         <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+        ${w.status === 'Completed' ? `
+        <button class="btn btn-outline-primary btn-sm" onclick="downloadReport(${w.id})">
+            <i class="bi bi-file-earmark-pdf me-1"></i>Download Report
+        </button>` : ''}
         ${canComplete ? `
         <button id="modalCompleteBtn" class="btn btn-success btn-sm"
                 onclick="openCompleteFromDetail()"
@@ -451,6 +455,17 @@ async function toggleChecklistItem(itemId, checked, workOrderId) {
         btn.disabled = !allChecked;
         btn.title    = allChecked ? '' : 'Complete all safety checklist items first';
     }
+}
+
+async function downloadReport(id) {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`/api/report/${id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) { alert('Failed to generate report'); return; }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    window.open(url, '_blank');
 }
 
 function openCompleteFromDetail() {
