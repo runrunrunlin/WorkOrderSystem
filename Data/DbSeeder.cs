@@ -8,10 +8,11 @@ public static class DbSeeder
     {
         if (db.Users.Any()) return;
 
-        var admin = new User { Username = "admin", PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin123"), Role = "Admin",      FullName = "System Administrator" };
-        var tech1 = new User { Username = "tech1", PasswordHash = BCrypt.Net.BCrypt.HashPassword("tech123"),  Role = "Technician", FullName = "John Smith" };
-        var tech2 = new User { Username = "tech2", PasswordHash = BCrypt.Net.BCrypt.HashPassword("tech123"),  Role = "Technician", FullName = "Mike Johnson" };
-        db.Users.AddRange(admin, tech1, tech2);
+        var admin  = new User { Username = "admin",       PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin123"), Role = "Admin",      FullName = "System Administrator" };
+        var super1 = new User { Username = "supervisor1", PasswordHash = BCrypt.Net.BCrypt.HashPassword("super123"),  Role = "Supervisor", FullName = "Sarah Connor" };
+        var tech1  = new User { Username = "tech1",       PasswordHash = BCrypt.Net.BCrypt.HashPassword("tech123"),  Role = "Technician", FullName = "John Smith" };
+        var tech2  = new User { Username = "tech2",       PasswordHash = BCrypt.Net.BCrypt.HashPassword("tech123"),  Role = "Technician", FullName = "Mike Johnson" };
+        db.Users.AddRange(admin, super1, tech1, tech2);
 
         var lathe  = new Equipment { Name = "CNC Lathe A",      Model = "CK6150",      SerialNumber = "SN-001", Location = "Workshop 1", Status = "Normal" };
         var press  = new Equipment { Name = "Hydraulic Press",  Model = "HP-200T",     SerialNumber = "SN-002", Location = "Workshop 2", Status = "Normal" };

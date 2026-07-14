@@ -6,7 +6,7 @@ public class WorkOrder
     public string Title { get; set; } = "";
     public string Description { get; set; } = "";
     public string Priority { get; set; } = "Medium"; // Low, Medium, High
-    public string Status { get; set; } = "Pending"; // Pending, InProgress, Completed, Cancelled
+    public string Status { get; set; } = "Pending"; // Pending, Approved, InProgress, PendingReview, Completed, Rejected, Cancelled
 
     public int EquipmentId { get; set; }
     public Equipment Equipment { get; set; } = null!;
@@ -22,4 +22,5 @@ public class WorkOrder
     public DateTime? CompletedAt { get; set; }
 
     public string? CompletionNotes { get; set; }
+    public string? RejectionReason { get; set; }
 }
