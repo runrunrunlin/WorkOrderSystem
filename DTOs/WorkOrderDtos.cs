@@ -6,7 +6,7 @@ public record WorkOrderDto(
     int ReportedById, string ReportedByName,
     int? AssignedToId, string? AssignedToName,
     DateTime CreatedAt, DateTime? UpdatedAt, DateTime? CompletedAt,
-    string? CompletionNotes
+    string? CompletionNotes, string? RejectionReason
 );
 
 public record CreateWorkOrderDto(string Title, string Description, string Priority, int EquipmentId);
@@ -14,3 +14,5 @@ public record CreateWorkOrderDto(string Title, string Description, string Priori
 public record AssignWorkOrderDto(int TechnicianId);
 
 public record CompleteWorkOrderDto(string CompletionNotes);
+
+public record RejectWorkOrderDto(string RejectionReason);

@@ -24,7 +24,7 @@ public class WorkOrderController : ControllerBase
         w.EquipmentId, w.Equipment.Name,
         w.ReportedById, w.ReportedBy.FullName,
         w.AssignedToId, w.AssignedTo?.FullName,
-        w.CreatedAt, w.UpdatedAt, w.CompletedAt, w.CompletionNotes
+        w.CreatedAt, w.UpdatedAt, w.CompletedAt, w.CompletionNotes, w.RejectionReason
     );
 
     [HttpGet]
@@ -93,7 +93,7 @@ public class WorkOrderController : ControllerBase
             .Include(x => x.Equipment).Include(x => x.ReportedBy).Include(x => x.AssignedTo)
             .FirstOrDefaultAsync(x => x.Id == id);
         if (w == null) return NotFound();
-        if (w.Status != "Pending") return BadRequest(new { message = "Only pending work orders can be assigned" });
+        if (w.Status != "Approved") return BadRequest(new { message = "Only approved work orders can be assigned" });
 
         var tech = await _db.Users.FindAsync(dto.TechnicianId);
         if (tech == null || tech.Role != "Technician") return BadRequest(new { message = "Technician not found" });
@@ -137,6 +137,82 @@ public class WorkOrderController : ControllerBase
 
         w.Status = "Completed";
         w.CompletionNotes = dto.CompletionNotes;
+        w.CompletedAt = DateTime.UtcNow;
+        w.UpdatedAt = DateTime.UtcNow;
+
+        var equipment = await _db.Equipment.FindAsync(w.EquipmentId);
+        if (equipment != null) equipment.Status = "Normal";
+
+        await _db.SaveChangesAsync();
+        return Ok(ToDto(w));
+    }
+
+    [HttpPost("{id}/approve")]
+    [Authorize(Roles = "Supervisor")]
+    public async Task<IActionResult> Approve(int id)
+    {
+        var w = await _db.WorkOrders
+            .Include(x => x.Equipment).Include(x => x.ReportedBy).Include(x => x.AssignedTo)
+            .FirstOrDefaultAsync(x => x.Id == id);
+        if (w == null) return NotFound();
+        if (w.Status != "Pending") return BadRequest(new { message = "Only pending work orders can be approved" });
+
+        w.Status = "Approved";
+        w.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return Ok(ToDto(w));
+    }
+
+    [HttpPost("{id}/reject")]
+    [Authorize(Roles = "Supervisor")]
+    public async Task<IActionResult> Reject(int id, [FromBody] RejectWorkOrderDto dto)
+    {
+        var w = await _db.WorkOrders
+            .Include(x => x.Equipment).Include(x => x.ReportedBy).Include(x => x.AssignedTo)
+            .FirstOrDefaultAsync(x => x.Id == id);
+        if (w == null) return NotFound();
+        if (w.Status is not ("Pending" or "Approved"))
+            return BadRequest(new { message = "Only pending or approved work orders can be rejected" });
+
+        w.Status = "Rejected";
+        w.RejectionReason = dto.RejectionReason;
+        w.UpdatedAt = DateTime.UtcNow;
+
+        var equipment = await _db.Equipment.FindAsync(w.EquipmentId);
+        if (equipment?.Status == "UnderRepair") equipment.Status = "Normal";
+
+        await _db.SaveChangesAsync();
+        return Ok(ToDto(w));
+    }
+
+    [HttpPost("{id}/submit-review")]
+    [Authorize(Roles = "Technician,Admin")]
+    public async Task<IActionResult> SubmitReview(int id)
+    {
+        var w = await _db.WorkOrders
+            .Include(x => x.Equipment).Include(x => x.ReportedBy).Include(x => x.AssignedTo)
+            .FirstOrDefaultAsync(x => x.Id == id);
+        if (w == null) return NotFound();
+        if (w.Status != "InProgress") return BadRequest(new { message = "Only in-progress work orders can be submitted for review" });
+        if (!User.IsInRole("Admin") && w.AssignedToId != CurrentUserId) return Forbid();
+
+        w.Status = "PendingReview";
+        w.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return Ok(ToDto(w));
+    }
+
+    [HttpPost("{id}/confirm-complete")]
+    [Authorize(Roles = "Supervisor")]
+    public async Task<IActionResult> ConfirmComplete(int id)
+    {
+        var w = await _db.WorkOrders
+            .Include(x => x.Equipment).Include(x => x.ReportedBy).Include(x => x.AssignedTo)
+            .FirstOrDefaultAsync(x => x.Id == id);
+        if (w == null) return NotFound();
+        if (w.Status != "PendingReview") return BadRequest(new { message = "Only work orders pending review can be confirmed complete" });
+
+        w.Status = "Completed";
         w.CompletedAt = DateTime.UtcNow;
         w.UpdatedAt = DateTime.UtcNow;
 
