@@ -12,9 +12,13 @@
         .stat-card { border: none; border-radius: 12px; transition: transform .15s; }
         .stat-card:hover { transform: translateY(-2px); }
         .table th { font-weight: 600; font-size: .85rem; text-transform: uppercase; letter-spacing: .5px; }
+        .btn-xs { font-size: .75rem; }
+        .bg-purple  { background-color: #6f42c1 !important; }
+        .bg-darkred { background-color: #b02a37 !important; }
     </style>
 </head>
 <body>
+
 <!-- Navbar -->
 <nav class="navbar navbar-dark px-4 py-2 shadow-sm">
     <div class="d-flex align-items-center gap-3">
@@ -38,11 +42,14 @@
     <!-- Toolbar -->
     <div class="card border-0 shadow-sm mb-3">
         <div class="card-body py-3 d-flex flex-wrap align-items-center gap-2">
-            <select class="form-select form-select-sm" style="width:140px" id="filterStatus">
+            <select class="form-select form-select-sm" style="width:160px" id="filterStatus">
                 <option value="">All Statuses</option>
                 <option value="Pending">Pending</option>
+                <option value="Approved">Approved</option>
                 <option value="InProgress">In Progress</option>
+                <option value="PendingReview">Pending Review</option>
                 <option value="Completed">Completed</option>
+                <option value="Rejected">Rejected</option>
                 <option value="Cancelled">Cancelled</option>
             </select>
             <button class="btn btn-sm btn-outline-secondary" onclick="loadOrders()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
@@ -143,23 +150,23 @@
     </div>
 </div>
 
-<!-- Complete Modal -->
-<div class="modal fade" id="completeModal" tabindex="-1">
+<!-- Reject Modal -->
+<div class="modal fade" id="rejectModal" tabindex="-1">
     <div class="modal-dialog modal-sm">
         <div class="modal-content border-0 shadow">
             <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title fw-bold"><i class="bi bi-check-circle text-success me-2"></i>Complete Work Order</h5>
+                <h5 class="modal-title fw-bold"><i class="bi bi-x-circle text-danger me-2"></i>Reject Work Order</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p class="text-muted small mb-2">Work Order: <span id="complete_title" class="fw-semibold text-dark"></span></p>
-                <label class="form-label fw-semibold">Completion Notes <span class="text-danger">*</span></label>
-                <textarea class="form-control" id="complete_notes" rows="3" placeholder="Describe repair work performed, parts replaced, etc."></textarea>
-                <div id="completeError" class="alert alert-danger py-2 small mt-2 d-none"></div>
+                <p class="text-muted small mb-2">Work Order: <span id="reject_title" class="fw-semibold text-dark"></span></p>
+                <label class="form-label fw-semibold">Rejection Reason <span class="text-danger">*</span></label>
+                <textarea class="form-control" id="reject_reason" rows="3" placeholder="Explain why this work order is being rejected"></textarea>
+                <div id="rejectError" class="alert alert-danger py-2 small mt-2 d-none"></div>
             </div>
             <div class="modal-footer border-0 pt-0">
                 <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                <button class="btn btn-success btn-sm" onclick="submitComplete()"><i class="bi bi-check2-all me-1"></i>Mark as Complete</button>
+                <button class="btn btn-danger btn-sm" onclick="submitReject()"><i class="bi bi-x-circle me-1"></i>Confirm Reject</button>
             </div>
         </div>
     </div>
@@ -184,15 +191,29 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="/js/api.js"></script>
 <script>
+// Extend shared maps with new statuses
+statusLabel.Approved      = 'Approved';
+statusLabel.PendingReview = 'Pending Review';
+statusLabel.Rejected      = 'Rejected';
+statusClass.Approved      = 'primary';
+statusClass.PendingReview = 'purple';
+statusClass.Rejected      = 'darkred';
+
 if (!API.requireAuth()) throw '';
 
 const user = API.getUser();
+const isSupervisor = () => user.role === 'Supervisor';
+
 document.getElementById('navUser').innerHTML =
-    `<i class="bi bi-person-circle me-1"></i>${user.fullName} <span class="badge ${user.role==='Admin'?'bg-warning text-dark':'bg-light text-dark'} ms-1">${user.role==='Admin'?'Admin':'Technician'}</span>`;
+    `<i class="bi bi-person-circle me-1"></i>${user.fullName} <span class="badge ${
+        user.role === 'Admin'      ? 'bg-warning text-dark' :
+        user.role === 'Supervisor' ? 'bg-purple'            :
+                                     'bg-light text-dark'
+    } ms-1">${user.role}</span>`;
 
 let technicians = [];
 let currentAssignId = null;
-let currentCompleteId = null;
+let currentRejectId = null;
 let currentDetailWorkOrderId = null;
 let currentDetailWorkOrderTitle = '';
 
@@ -202,18 +223,15 @@ async function init() {
 }
 
 async function loadStats() {
-    const [all, equipment] = await Promise.all([
-        API.get('/api/workorder'),
-        API.get('/api/equipment')
-    ]);
+    const all = await API.get('/api/workorder');
     if (!all) return;
-    const counts = { Pending: 0, InProgress: 0, Completed: 0, Cancelled: 0 };
-    all.forEach(w => counts[w.status] = (counts[w.status] || 0) + 1);
+    const c = {};
+    all.forEach(w => c[w.status] = (c[w.status] || 0) + 1);
     const cards = [
-        { label: 'Total',       value: all.length,          icon: 'bi-list-task',          color: 'primary' },
-        { label: 'Pending',     value: counts.Pending,      icon: 'bi-hourglass-split',    color: 'warning' },
-        { label: 'In Progress', value: counts.InProgress,   icon: 'bi-gear-wide-connected', color: 'info' },
-        { label: 'Completed',   value: counts.Completed,    icon: 'bi-check-circle',       color: 'success' },
+        { label: 'Total',           value: all.length,                                              icon: 'bi-list-task',           color: 'primary' },
+        { label: 'Awaiting Action', value: (c.Pending || 0) + (c.Approved || 0),                   icon: 'bi-hourglass-split',     color: 'warning' },
+        { label: 'In Progress',     value: (c.InProgress || 0) + (c.PendingReview || 0),           icon: 'bi-gear-wide-connected', color: 'info'    },
+        { label: 'Completed',       value: c.Completed || 0,                                        icon: 'bi-check-circle',        color: 'success' },
     ];
     document.getElementById('statsRow').innerHTML = cards.map(c => `
         <div class="col-6 col-md-3">
@@ -237,38 +255,52 @@ async function loadOrders() {
     const orders = await API.get(url) || [];
     const tbody = document.getElementById('orderTable');
     const empty = document.getElementById('emptyState');
-    if (!orders.length) {
-        tbody.innerHTML = '';
-        empty.classList.remove('d-none');
-        return;
-    }
+    if (!orders.length) { tbody.innerHTML = ''; empty.classList.remove('d-none'); return; }
     empty.classList.add('d-none');
+
     tbody.innerHTML = orders.map(w => {
-        const actions = [];
-        actions.push(`<button class="btn btn-outline-secondary btn-xs py-0 px-2" onclick="showDetail(${w.id})"><i class="bi bi-eye"></i></button>`);
-        if (API.isAdmin() && w.status === 'Pending')
-            actions.push(`<button class="btn btn-outline-info btn-xs py-0 px-2" onclick="openAssign(${w.id},'${escHtml(w.title)}')"><i class="bi bi-person-check"></i> Assign</button>`);
+        const a = [];
+        a.push(`<button class="btn btn-outline-secondary btn-xs py-0 px-2" onclick="showDetail(${w.id})"><i class="bi bi-eye"></i></button>`);
+
+        // Supervisor actions
+        if (isSupervisor() && w.status === 'Pending')
+            a.push(`<button class="btn btn-outline-primary btn-xs py-0 px-2" onclick="approveOrder(${w.id})"><i class="bi bi-check-circle me-1"></i>Approve</button>`);
+        if (isSupervisor() && (w.status === 'Pending' || w.status === 'Approved'))
+            a.push(`<button class="btn btn-outline-danger btn-xs py-0 px-2" onclick="openReject(${w.id},'${escHtml(w.title)}')"><i class="bi bi-x-circle me-1"></i>Reject</button>`);
+        if (isSupervisor() && w.status === 'PendingReview')
+            a.push(`<button class="btn btn-outline-success btn-xs py-0 px-2" onclick="confirmComplete(${w.id})"><i class="bi bi-patch-check me-1"></i>Confirm Complete</button>`);
+
+        // Admin: assign only when Approved
+        if (API.isAdmin() && w.status === 'Approved')
+            a.push(`<button class="btn btn-outline-info btn-xs py-0 px-2" onclick="openAssign(${w.id},'${escHtml(w.title)}')"><i class="bi bi-person-check me-1"></i>Assign</button>`);
+
+        // Technician or Admin: submit for review when InProgress
         if (w.status === 'InProgress' && (API.isAdmin() || w.assignedToId === user.id))
-            actions.push(`<button class="btn btn-outline-success btn-xs py-0 px-2" onclick="openComplete(${w.id},'${escHtml(w.title)}')"><i class="bi bi-check2"></i> Complete</button>`);
-        if (API.isAdmin() && w.status !== 'Completed' && w.status !== 'Cancelled')
-            actions.push(`<button class="btn btn-outline-danger btn-xs py-0 px-2" onclick="cancelOrder(${w.id})"><i class="bi bi-x"></i></button>`);
+            a.push(`<button class="btn btn-outline-primary btn-xs py-0 px-2" onclick="submitReview(${w.id},'${escHtml(w.title)}')"><i class="bi bi-send me-1"></i>Submit Review</button>`);
+
+        // Admin: cancel (not on terminal statuses)
+        if (API.isAdmin() && !['Completed', 'Cancelled', 'Rejected'].includes(w.status))
+            a.push(`<button class="btn btn-outline-danger btn-xs py-0 px-2" onclick="cancelOrder(${w.id})"><i class="bi bi-x"></i></button>`);
+
         return `<tr>
             <td class="ps-3 text-muted small">#${w.id}</td>
             <td class="fw-semibold">${escHtml(w.title)}</td>
             <td class="small">${escHtml(w.equipmentName)}</td>
             <td><span class="badge bg-${priorityClass[w.priority]}">${priorityLabel[w.priority]}</span></td>
-            <td><span class="badge bg-${statusClass[w.status]}">${statusLabel[w.status]}</span></td>
+            <td><span class="badge bg-${statusClass[w.status] || 'secondary'}">${statusLabel[w.status] || w.status}</span></td>
             <td class="small">${escHtml(w.reportedByName)}</td>
             <td class="small">${w.assignedToName ? escHtml(w.assignedToName) : '<span class="text-muted">Unassigned</span>'}</td>
             <td class="small text-muted">${fmtDate(w.createdAt)}</td>
-            <td class="text-end pe-3"><div class="d-flex gap-1 justify-content-end">${actions.join('')}</div></td>
+            <td class="text-end pe-3"><div class="d-flex gap-1 justify-content-end flex-wrap">${a.join('')}</div></td>
         </tr>`;
     }).join('');
 }
 
 document.getElementById('filterStatus').addEventListener('change', loadOrders);
 
-function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── Create ──────────────────────────────────────────────────────────────────
 
 async function openCreateModal() {
     const equip = await API.get('/api/equipment') || [];
@@ -282,17 +314,19 @@ async function openCreateModal() {
 }
 
 async function submitCreate() {
-    const title = document.getElementById('c_title').value.trim();
+    const title       = document.getElementById('c_title').value.trim();
     const equipmentId = parseInt(document.getElementById('c_equipment').value);
-    const priority = document.getElementById('c_priority').value;
+    const priority    = document.getElementById('c_priority').value;
     const description = document.getElementById('c_desc').value.trim();
-    const errDiv = document.getElementById('createError');
+    const errDiv      = document.getElementById('createError');
     if (!title) { errDiv.textContent = 'Please enter a fault title'; errDiv.classList.remove('d-none'); return; }
     const { ok, data } = await API.post('/api/workorder', { title, description, priority, equipmentId });
     if (!ok) { errDiv.textContent = data?.message || 'Submission failed'; errDiv.classList.remove('d-none'); return; }
     bootstrap.Modal.getInstance('#createModal').hide();
     await Promise.all([loadOrders(), loadStats()]);
 }
+
+// ── Assign ───────────────────────────────────────────────────────────────────
 
 function openAssign(id, title) {
     currentAssignId = id;
@@ -312,21 +346,44 @@ async function submitAssign() {
     await Promise.all([loadOrders(), loadStats()]);
 }
 
-function openComplete(id, title) {
-    currentCompleteId = id;
-    document.getElementById('complete_title').textContent = title;
-    document.getElementById('complete_notes').value = '';
-    document.getElementById('completeError').classList.add('d-none');
-    new bootstrap.Modal('#completeModal').show();
+// ── Approve / Reject / Submit Review / Confirm Complete ──────────────────────
+
+async function approveOrder(id) {
+    if (!confirm('Approve this work order?')) return;
+    const { ok, data } = await API.post(`/api/workorder/${id}/approve`);
+    if (!ok) { alert(data?.message || 'Approval failed'); return; }
+    await Promise.all([loadOrders(), loadStats()]);
 }
 
-async function submitComplete() {
-    const notes = document.getElementById('complete_notes').value.trim();
-    const errDiv = document.getElementById('completeError');
-    if (!notes) { errDiv.textContent = 'Please enter completion notes'; errDiv.classList.remove('d-none'); return; }
-    const { ok, data } = await API.put(`/api/workorder/${currentCompleteId}/complete`, { completionNotes: notes });
-    if (!ok) { errDiv.textContent = data?.message || 'Operation failed'; errDiv.classList.remove('d-none'); return; }
-    bootstrap.Modal.getInstance('#completeModal').hide();
+function openReject(id, title) {
+    currentRejectId = id;
+    document.getElementById('reject_title').textContent = title;
+    document.getElementById('reject_reason').value = '';
+    document.getElementById('rejectError').classList.add('d-none');
+    new bootstrap.Modal('#rejectModal').show();
+}
+
+async function submitReject() {
+    const reason = document.getElementById('reject_reason').value.trim();
+    const errDiv = document.getElementById('rejectError');
+    if (!reason) { errDiv.textContent = 'Please enter a rejection reason'; errDiv.classList.remove('d-none'); return; }
+    const { ok, data } = await API.post(`/api/workorder/${currentRejectId}/reject`, { rejectionReason: reason });
+    if (!ok) { errDiv.textContent = data?.message || 'Rejection failed'; errDiv.classList.remove('d-none'); return; }
+    bootstrap.Modal.getInstance('#rejectModal').hide();
+    await Promise.all([loadOrders(), loadStats()]);
+}
+
+async function submitReview(id, title) {
+    if (!confirm(`Submit "${title}" for supervisor review?`)) return;
+    const { ok, data } = await API.post(`/api/workorder/${id}/submit-review`);
+    if (!ok) { alert(data?.message || 'Operation failed'); return; }
+    await Promise.all([loadOrders(), loadStats()]);
+}
+
+async function confirmComplete(id) {
+    if (!confirm('Confirm this work order as completed?')) return;
+    const { ok, data } = await API.post(`/api/workorder/${id}/confirm-complete`);
+    if (!ok) { alert(data?.message || 'Operation failed'); return; }
     await Promise.all([loadOrders(), loadStats()]);
 }
 
@@ -336,6 +393,8 @@ async function cancelOrder(id) {
     if (!ok) { alert(data?.message || 'Cancellation failed'); return; }
     await Promise.all([loadOrders(), loadStats()]);
 }
+
+// ── Detail Modal ─────────────────────────────────────────────────────────────
 
 async function showDetail(id) {
     const [w, photos, checklist] = await Promise.all([
@@ -348,11 +407,11 @@ async function showDetail(id) {
     currentDetailWorkOrderId    = w.id;
     currentDetailWorkOrderTitle = w.title;
 
-    const isInProgress = w.status === 'InProgress';
-    const canComplete  = isInProgress && (API.isAdmin() || w.assignedToId === user.id);
-    const items        = checklist || [];
-    const allChecked   = items.length > 0 && items.every(i => i.isChecked);
-    const remaining    = items.filter(i => !i.isChecked).length;
+    const showChecklist  = w.status === 'InProgress' || w.status === 'PendingReview';
+    const canSubmitReview = w.status === 'InProgress' && (API.isAdmin() || w.assignedToId === user.id);
+    const items      = checklist || [];
+    const allChecked = items.length > 0 && items.every(i => i.isChecked);
+    const remaining  = items.filter(i => !i.isChecked).length;
 
     document.getElementById('detailBody').innerHTML = `
         <div class="row g-3">
@@ -362,7 +421,7 @@ async function showDetail(id) {
                     <div class="row g-2 small">
                         <div class="col-5 text-muted">Work Order No.</div><div class="col-7 fw-semibold">#${w.id}</div>
                         <div class="col-5 text-muted">Priority</div><div class="col-7"><span class="badge bg-${priorityClass[w.priority]}">${priorityLabel[w.priority]}</span></div>
-                        <div class="col-5 text-muted">Status</div><div class="col-7"><span class="badge bg-${statusClass[w.status]}">${statusLabel[w.status]}</span></div>
+                        <div class="col-5 text-muted">Status</div><div class="col-7"><span class="badge bg-${statusClass[w.status] || 'secondary'}">${statusLabel[w.status] || w.status}</span></div>
                         <div class="col-5 text-muted">Equipment</div><div class="col-7">${escHtml(w.equipmentName)}</div>
                         <div class="col-5 text-muted">Reported By</div><div class="col-7">${escHtml(w.reportedByName)}</div>
                         <div class="col-5 text-muted">Assigned To</div><div class="col-7">${w.assignedToName ? escHtml(w.assignedToName) : '<span class="text-muted">Unassigned</span>'}</div>
@@ -376,12 +435,16 @@ async function showDetail(id) {
                     <div class="text-muted small mb-1">Fault Description</div>
                     <div class="bg-light rounded p-3 small">${escHtml(w.description) || '<span class="text-muted">None</span>'}</div>
                 </div>
-                ${w.completionNotes ? `<div>
+                ${w.completionNotes ? `<div class="mb-2">
                     <div class="text-muted small mb-1">Completion Notes</div>
                     <div class="bg-success bg-opacity-10 rounded p-3 small">${escHtml(w.completionNotes)}</div>
                 </div>` : ''}
+                ${w.rejectionReason ? `<div>
+                    <div class="text-muted small mb-1">Rejection Reason</div>
+                    <div class="bg-danger bg-opacity-10 rounded p-3 small text-danger">${escHtml(w.rejectionReason)}</div>
+                </div>` : ''}
             </div>
-            ${isInProgress ? `
+            ${showChecklist ? `
             <div class="col-12">
                 <hr class="my-1">
                 <div class="d-flex align-items-center gap-2 mb-2">
@@ -390,7 +453,7 @@ async function showDetail(id) {
                         ? '<span class="badge bg-success">All Complete</span>'
                         : `<span class="badge bg-warning text-dark">${remaining} remaining</span>`}
                 </div>
-                <div id="checklistItems">${renderChecklist(items, w.id)}</div>
+                <div id="checklistItems">${renderChecklist(items, w.id, w.status === 'InProgress')}</div>
             </div>` : ''}
             <div class="col-12">
                 <hr class="my-1">
@@ -402,9 +465,7 @@ async function showDetail(id) {
                 </div>
                 <input type="file" id="photoInput" accept=".jpg,.jpeg,.png,.gif" class="d-none"
                        onchange="uploadPhoto(${w.id}, this)">
-                <div id="photoGallery" class="d-flex flex-wrap gap-2">
-                    ${renderPhotoThumbs(photos || [])}
-                </div>
+                <div id="photoGallery" class="d-flex flex-wrap gap-2">${renderPhotoThumbs(photos || [])}</div>
                 <div id="photoUploadMsg" class="small mt-1"></div>
             </div>
         </div>`;
@@ -415,41 +476,46 @@ async function showDetail(id) {
         <button class="btn btn-outline-primary btn-sm" onclick="downloadReport(${w.id})">
             <i class="bi bi-file-earmark-pdf me-1"></i>Download Report
         </button>` : ''}
-        ${canComplete ? `
-        <button id="modalCompleteBtn" class="btn btn-success btn-sm"
-                onclick="openCompleteFromDetail()"
+        ${canSubmitReview ? `
+        <button id="modalSubmitReviewBtn" class="btn btn-primary btn-sm"
+                onclick="submitReviewFromDetail()"
                 ${!allChecked ? 'disabled title="Complete all safety checklist items first"' : ''}>
-            <i class="bi bi-check2-all me-1"></i>Mark as Complete
+            <i class="bi bi-send me-1"></i>Submit for Review
+        </button>` : ''}
+        ${isSupervisor() && w.status === 'Pending' ? `
+        <button class="btn btn-primary btn-sm" onclick="approveFromDetail(${w.id})">
+            <i class="bi bi-check-circle me-1"></i>Approve
+        </button>` : ''}
+        ${isSupervisor() && (w.status === 'Pending' || w.status === 'Approved') ? `
+        <button class="btn btn-danger btn-sm" onclick="rejectFromDetail(${w.id},'${escHtml(w.title)}')">
+            <i class="bi bi-x-circle me-1"></i>Reject
+        </button>` : ''}
+        ${isSupervisor() && w.status === 'PendingReview' ? `
+        <button class="btn btn-success btn-sm" onclick="confirmCompleteFromDetail(${w.id})">
+            <i class="bi bi-patch-check me-1"></i>Confirm Complete
         </button>` : ''}`;
 
     new bootstrap.Modal('#detailModal').show();
 }
 
-function renderChecklist(items, workOrderId) {
-    if (!items.length)
-        return '<span class="text-muted small">No checklist items.</span>';
+function renderChecklist(items, workOrderId, editable) {
+    if (!items.length) return '<span class="text-muted small">No checklist items.</span>';
     return items.map(item => `
         <div class="form-check mb-2">
             <input class="form-check-input" type="checkbox" id="chk_${item.id}"
                    ${item.isChecked ? 'checked' : ''}
-                   onchange="toggleChecklistItem(${item.id}, this.checked, ${workOrderId})">
+                   ${editable ? `onchange="toggleChecklistItem(${item.id}, this.checked, ${workOrderId})"` : 'disabled'}>
             <label class="form-check-label small ${item.isChecked ? 'text-decoration-line-through text-muted' : ''}"
-                   for="chk_${item.id}">
-                ${escHtml(item.itemText)}
-            </label>
+                   for="chk_${item.id}">${escHtml(item.itemText)}</label>
         </div>`).join('');
 }
 
 async function toggleChecklistItem(itemId, checked, workOrderId) {
-    const url = `/api/checklist/${itemId}/${checked ? 'check' : 'uncheck'}`;
-    const { ok } = await API.put(url);
-    if (!ok) {
-        document.getElementById(`chk_${itemId}`).checked = !checked;
-        return;
-    }
+    const { ok } = await API.put(`/api/checklist/${itemId}/${checked ? 'check' : 'uncheck'}`);
+    if (!ok) { document.getElementById(`chk_${itemId}`).checked = !checked; return; }
     const items = await API.get(`/api/checklist/${workOrderId}`);
-    document.getElementById('checklistItems').innerHTML = renderChecklist(items || [], workOrderId);
-    const btn = document.getElementById('modalCompleteBtn');
+    document.getElementById('checklistItems').innerHTML = renderChecklist(items || [], workOrderId, true);
+    const btn = document.getElementById('modalSubmitReviewBtn');
     if (btn) {
         const allChecked = items && items.length > 0 && items.every(i => i.isChecked);
         btn.disabled = !allChecked;
@@ -457,45 +523,65 @@ async function toggleChecklistItem(itemId, checked, workOrderId) {
     }
 }
 
+// Detail modal action helpers
+async function submitReviewFromDetail() {
+    const { ok, data } = await API.post(`/api/workorder/${currentDetailWorkOrderId}/submit-review`);
+    if (!ok) { alert(data?.message || 'Operation failed'); return; }
+    bootstrap.Modal.getInstance('#detailModal').hide();
+    await Promise.all([loadOrders(), loadStats()]);
+}
+
+async function approveFromDetail(id) {
+    if (!confirm('Approve this work order?')) return;
+    const { ok, data } = await API.post(`/api/workorder/${id}/approve`);
+    if (!ok) { alert(data?.message || 'Approval failed'); return; }
+    bootstrap.Modal.getInstance('#detailModal').hide();
+    await Promise.all([loadOrders(), loadStats()]);
+}
+
+function rejectFromDetail(id, title) {
+    bootstrap.Modal.getInstance('#detailModal').hide();
+    openReject(id, title);
+}
+
+async function confirmCompleteFromDetail(id) {
+    if (!confirm('Confirm this work order as completed?')) return;
+    const { ok, data } = await API.post(`/api/workorder/${id}/confirm-complete`);
+    if (!ok) { alert(data?.message || 'Operation failed'); return; }
+    bootstrap.Modal.getInstance('#detailModal').hide();
+    await Promise.all([loadOrders(), loadStats()]);
+}
+
+// ── Report ───────────────────────────────────────────────────────────────────
+
 async function downloadReport(id) {
-    const token = localStorage.getItem('token');
     const res = await fetch(`/api/report/${id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${API.getToken()}` }
     });
     if (!res.ok) { alert('Failed to generate report'); return; }
     const blob = await res.blob();
-    const url  = URL.createObjectURL(blob);
-    window.open(url, '_blank');
+    window.open(URL.createObjectURL(blob), '_blank');
 }
 
-function openCompleteFromDetail() {
-    bootstrap.Modal.getInstance('#detailModal').hide();
-    openComplete(currentDetailWorkOrderId, currentDetailWorkOrderTitle);
-}
+// ── Photos ───────────────────────────────────────────────────────────────────
 
 function renderPhotoThumbs(photos) {
-    if (!photos.length)
-        return '<span class="text-muted small">No photos yet.</span>';
+    if (!photos.length) return '<span class="text-muted small">No photos yet.</span>';
     return photos.map(p => {
         const canDelete = p.uploadedById === user.id || API.isAdmin();
         return `
         <div style="position:relative;display:inline-block;">
             <a href="/uploads/${p.workOrderId}/${p.fileName}" target="_blank" title="Click to open full size">
                 <img src="/uploads/${p.workOrderId}/${p.fileName}" loading="lazy"
-                     style="width:88px;height:88px;object-fit:cover;border-radius:8px;
-                            border:1px solid #e5e7eb;display:block;">
+                     style="width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;display:block;">
             </a>
             ${canDelete ? `
-            <button onclick="deletePhoto(${p.id}, ${p.workOrderId})"
-                    title="Delete photo"
-                    style="position:absolute;top:3px;right:3px;width:20px;height:20px;
-                           border-radius:50%;border:none;background:rgba(0,0,0,.55);
-                           color:#fff;font-size:13px;line-height:1;cursor:pointer;
-                           display:flex;align-items:center;justify-content:center;
+            <button onclick="deletePhoto(${p.id}, ${p.workOrderId})" title="Delete photo"
+                    style="position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;
+                           border:none;background:rgba(0,0,0,.55);color:#fff;font-size:13px;line-height:1;
+                           cursor:pointer;display:flex;align-items:center;justify-content:center;
                            padding:0;opacity:.75;transition:opacity .15s;"
-                    onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='.75'">
-                &times;
-            </button>` : ''}
+                    onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='.75'">&times;</button>` : ''}
         </div>`;
     }).join('');
 }
@@ -511,36 +597,25 @@ async function deletePhoto(photoId, workOrderId) {
 async function uploadPhoto(workOrderId, input) {
     const file = input.files[0];
     if (!file) return;
-
     const msg = document.getElementById('photoUploadMsg');
     msg.innerHTML = '<span class="text-muted"><i class="bi bi-arrow-repeat me-1"></i>Uploading…</span>';
-
     const formData = new FormData();
     formData.append('file', file);
-
     const res = await fetch(`/api/photo/${workOrderId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${API.getToken()}` },
         body: formData
     });
-
     input.value = '';
-
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         msg.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>${escHtml(err.message || 'Upload failed')}</span>`;
         return;
     }
-
     msg.innerHTML = '';
     const photos = await API.get(`/api/photo/${workOrderId}`);
     document.getElementById('photoGallery').innerHTML = renderPhotoThumbs(photos || []);
 }
-
-// Add btn-xs style
-const style = document.createElement('style');
-style.textContent = '.btn-xs { font-size:.75rem; }';
-document.head.appendChild(style);
 
 init();
 </script>
